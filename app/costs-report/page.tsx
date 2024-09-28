@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { useUser } from '@/lib/useUser' // Assuming you have this hook
+import { useUser } from '../../lib/useUser'  // Assuming you have this hook
 
 interface CostItem {
   id: number;
