@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast"
 import Link from 'next/link'
 import { Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useUser } from '../../lib/useUser' 
+import { useUser } from '../../lib/useUser'
 
 interface CostItem {
   id: number;
@@ -20,38 +20,63 @@ interface CostItem {
 export default function CostEntryPage() {
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
-  const [costs, setCosts] = useState<CostItem[]>([])
+  const [dailyCosts, setDailyCosts] = useState<CostItem[]>([])
+  const [recentCosts, setRecentCosts] = useState<CostItem[]>([])
   const { toast } = useToast()
   const { user, loading } = useUser()
 
   useEffect(() => {
     if (user && !loading) {
-      fetchCosts()
+      fetchDailyCosts()
+      fetchRecentCosts()
     }
   }, [user, loading])
 
-  function formatCurrency(amount: number): string {
-    return `TZS ${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  async function fetchDailyCosts() {
+    if (!user) return
+    const today = new Date().toISOString().split('T')[0]
+    const { data, error } = await supabase
+      .from('costs')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('created_at', today)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching daily costs:', error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch daily costs. Please try again.",
+        variant: "destructive",
+      })
+    } else {
+      setDailyCosts(data || [])
+    }
   }
 
-  async function fetchCosts() {
+  async function fetchRecentCosts() {
     if (!user) return
     const { data, error } = await supabase
       .from('costs')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+      .limit(10)
 
     if (error) {
-      console.error('Error fetching costs:', error)
+      console.error('Error fetching recent costs:', error)
       toast({
         title: "Error",
-        description: "Failed to fetch costs. Please try again.",
+        description: "Failed to fetch recent costs. Please try again.",
         variant: "destructive",
       })
     } else {
-      setCosts(data || [])
+      setRecentCosts(data || [])
     }
+  }
+
+  function formatCurrency(amount: number): string {
+    return `TZS ${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -78,7 +103,8 @@ export default function CostEntryPage() {
         variant: "destructive",
       })
     } else {
-      setCosts([data, ...costs])
+      setDailyCosts([data, ...dailyCosts])
+      setRecentCosts([data, ...recentCosts.slice(0, 9)])
       setDescription('')
       setAmount('')
       toast({
@@ -88,7 +114,7 @@ export default function CostEntryPage() {
     }
   }
 
-  const deleteCost = async (id: number) => {
+  const deleteCost = async (id: number, isDaily: boolean) => {
     const { error } = await supabase
       .from('costs')
       .delete()
@@ -103,7 +129,10 @@ export default function CostEntryPage() {
         variant: "destructive",
       })
     } else {
-      setCosts(costs.filter(cost => cost.id !== id))
+      if (isDaily) {
+        setDailyCosts(dailyCosts.filter(cost => cost.id !== id))
+      }
+      setRecentCosts(recentCosts.filter(cost => cost.id !== id))
       toast({
         title: "Cost Deleted",
         description: "The cost has been removed from the list.",
@@ -113,15 +142,12 @@ export default function CostEntryPage() {
 
   const submitDailyReport = async () => {
     if (!user) return
-    // Here you would typically update the reports table
-    // For now, we'll just log the costs
-    console.log('Submitting daily cost report:', costs)
+    console.log('Submitting daily cost report:', dailyCosts)
     toast({
       title: "Daily Cost Report Submitted",
-      description: `${costs.length} cost entries have been submitted.`,
+      description: `${dailyCosts.length} cost entries have been submitted.`,
     })
-    // Optionally, clear the costs list after submission
-    // setCosts([])
+    setDailyCosts([])
   }
 
   return (
@@ -159,28 +185,49 @@ export default function CostEntryPage() {
         </div>
         
         <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Recent Costs</h2>
-          {costs.length > 0 ? (
+          <h2 className="text-xl font-semibold mb-4">Today's Costs</h2>
+          {dailyCosts.length > 0 ? (
             <ul className="space-y-4">
-              {costs.map((cost) => (
+              {dailyCosts.map((cost) => (
                 <li key={cost.id} className="flex justify-between items-center border-b pb-4 last:border-b-0 last:pb-0">
                   <div>
                     <span className="font-medium">{cost.description}</span>
                     <span className="ml-4">{formatCurrency(cost.amount)}</span>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteCost(cost.id)}>
+                  <Button variant="ghost" size="icon" onClick={() => deleteCost(cost.id, true)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500">No costs recorded yet.</p>
+            <p className="text-gray-500">No costs recorded today.</p>
+          )}
+        </div>
+        
+        <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Recent Costs</h2>
+          {recentCosts.length > 0 ? (
+            <ul className="space-y-4">
+              {recentCosts.map((cost) => (
+                <li key={cost.id} className="flex justify-between items-center border-b pb-4 last:border-b-0 last:pb-0">
+                  <div>
+                    <span className="font-medium">{cost.description}</span>
+                    <span className="ml-4">{formatCurrency(cost.amount)}</span>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => deleteCost(cost.id, false)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No recent costs recorded.</p>
           )}
         </div>
         
         <div className="flex justify-between items-center">
-          <Button onClick={submitDailyReport} disabled={costs.length === 0}>
+          <Button onClick={submitDailyReport} disabled={dailyCosts.length === 0}>
             Submit Daily Report
           </Button>
           <Link href="/">

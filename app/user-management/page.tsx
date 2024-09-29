@@ -36,45 +36,67 @@ export default function UserManagementPage() {
 
   async function fetchUsers() {
     setIsLoading(true)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, role')
+    try {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, role')
 
-    if (error) {
+      if (profilesError) {
+        throw profilesError
+      }
+
+      setUsers(profiles)
+    } catch (error) {
       console.error('Error fetching users:', error)
       toast({
         title: "Error",
         description: "Failed to fetch users. Please try again.",
         variant: "destructive",
       })
-    } else {
-      setUsers(data || [])
+    } finally {
+      setIsLoading(false)
     }
-    setIsLoading(false)
   }
 
   async function addUser(e: React.FormEvent) {
     e.preventDefault()
-    const { data, error } = await supabase.auth.signUp({
-      email: newUserEmail,
-      password: newUserPassword,
-    })
+    setIsLoading(true)
 
-    if (error) {
-      console.error('Error adding user:', error)
-      toast({
-        title: "Error",
-        description: "Failed to add user. Please try again.",
-        variant: "destructive",
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newUserEmail, password: newUserPassword }),
       })
-    } else {
+
+      let data
+      try {
+        data = await response.json()
+      } catch (error) {
+        console.error('Error parsing response:', error)
+        throw new Error('Invalid server response')
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || `Failed to add user: ${response.status} ${response.statusText}`)
+      }
+
       toast({
         title: "Success",
-        description: "User added successfully.",
+        description: "User added successfully. They will need to confirm their email.",
       })
       setNewUserEmail('')
       setNewUserPassword('')
       fetchUsers()
+    } catch (error) {
+      console.error('Error adding user:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add user. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 

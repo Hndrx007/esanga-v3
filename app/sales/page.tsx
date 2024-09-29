@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast"
 import Link from 'next/link'
 import { Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useUser } from '../../lib/useUser'  // Assuming you have this hook
+import { useUser } from '../../lib/useUser'
 
 interface SaleItem {
   id: number;
@@ -22,33 +22,58 @@ export default function SalesEntryPage() {
   const [description, setDescription] = useState('')
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
-  const [sales, setSales] = useState<SaleItem[]>([])
+  const [dailySales, setDailySales] = useState<SaleItem[]>([])
+  const [recentSales, setRecentSales] = useState<SaleItem[]>([])
   const { toast } = useToast()
   const { user, loading } = useUser()
 
   useEffect(() => {
     if (user && !loading) {
-      fetchSales()
+      fetchDailySales()
+      fetchRecentSales()
     }
   }, [user, loading])
 
-  async function fetchSales() {
+  async function fetchDailySales() {
+    if (!user) return
+    const today = new Date().toISOString().split('T')[0]
+    const { data, error } = await supabase
+      .from('sales')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('created_at', today)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching daily sales:', error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch daily sales. Please try again.",
+        variant: "destructive",
+      })
+    } else {
+      setDailySales(data || [])
+    }
+  }
+
+  async function fetchRecentSales() {
     if (!user) return
     const { data, error } = await supabase
       .from('sales')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+      .limit(10)
 
     if (error) {
-      console.error('Error fetching sales:', error)
+      console.error('Error fetching recent sales:', error)
       toast({
         title: "Error",
-        description: "Failed to fetch sales. Please try again.",
+        description: "Failed to fetch recent sales. Please try again.",
         variant: "destructive",
       })
     } else {
-      setSales(data || [])
+      setRecentSales(data || [])
     }
   }
 
@@ -81,7 +106,8 @@ export default function SalesEntryPage() {
         variant: "destructive",
       })
     } else {
-      setSales([data, ...sales])
+      setDailySales([data, ...dailySales])
+      setRecentSales([data, ...recentSales.slice(0, 9)])
       setDescription('')
       setQuantity('')
       setPrice('')
@@ -92,7 +118,7 @@ export default function SalesEntryPage() {
     }
   }
 
-  const deleteSale = async (id: number) => {
+  const deleteSale = async (id: number, isDaily: boolean) => {
     const { error } = await supabase
       .from('sales')
       .delete()
@@ -107,7 +133,10 @@ export default function SalesEntryPage() {
         variant: "destructive",
       })
     } else {
-      setSales(sales.filter(sale => sale.id !== id))
+      if (isDaily) {
+        setDailySales(dailySales.filter(sale => sale.id !== id))
+      }
+      setRecentSales(recentSales.filter(sale => sale.id !== id))
       toast({
         title: "Sale Deleted",
         description: "The sale has been removed from the list.",
@@ -117,15 +146,12 @@ export default function SalesEntryPage() {
 
   const submitDailyReport = async () => {
     if (!user) return
-    // Here you would typically update the reports table
-    // For now, we'll just log the sales
-    console.log('Submitting daily sales report:', sales)
+    console.log('Submitting daily sales report:', dailySales)
     toast({
       title: "Daily Sales Report Submitted",
-      description: `${sales.length} sales entries have been submitted.`,
+      description: `${dailySales.length} sales entries have been submitted.`,
     })
-    // Optionally, clear the sales list after submission
-    // setSales([])
+    setDailySales([])
   }
 
   return (
@@ -175,28 +201,49 @@ export default function SalesEntryPage() {
         </div>
         
         <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Recent Sales</h2>
-          {sales.length > 0 ? (
+          <h2 className="text-xl font-semibold mb-4">Today's Sales</h2>
+          {dailySales.length > 0 ? (
             <ul className="space-y-4">
-              {sales.map((sale) => (
+              {dailySales.map((sale) => (
                 <li key={sale.id} className="flex justify-between items-center border-b pb-4 last:border-b-0 last:pb-0">
                   <div>
                     <span className="font-medium">{sale.description}</span>
                     <span className="ml-4">Qty: {sale.quantity}, Price: {formatCurrency(sale.price)}</span>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteSale(sale.id)}>
+                  <Button variant="ghost" size="icon" onClick={() => deleteSale(sale.id, true)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500">No sales recorded yet.</p>
+            <p className="text-gray-500">No sales recorded today.</p>
+          )}
+        </div>
+        
+        <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Recent Sales</h2>
+          {recentSales.length > 0 ? (
+            <ul className="space-y-4">
+              {recentSales.map((sale) => (
+                <li key={sale.id} className="flex justify-between items-center border-b pb-4 last:border-b-0 last:pb-0">
+                  <div>
+                    <span className="font-medium">{sale.description}</span>
+                    <span className="ml-4">Qty: {sale.quantity}, Price: {formatCurrency(sale.price)}</span>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => deleteSale(sale.id, false)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No recent sales recorded.</p>
           )}
         </div>
         
         <div className="flex justify-between items-center">
-          <Button onClick={submitDailyReport} disabled={sales.length === 0}>
+          <Button onClick={submitDailyReport} disabled={dailySales.length === 0}>
             Submit Daily Report
           </Button>
           <Link href="/">
