@@ -18,23 +18,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { CalendarIcon, DollarSignIcon, LineChartIcon, PlusCircleIcon, MenuIcon, UserIcon, LogOutIcon } from "lucide-react"
 import { useUser } from '@/lib/useUser'
 import { supabase } from '@/lib/supabase'
-import { DailyReportsCard } from './components/DailyReportsCard'
+import { DailyReportsCard } from '@/components/DailyReportsCard'
+import { useSummaryData } from '@/lib/useSummaryData'
 
 export default function Dashboard() {
-  const { user, loading } = useUser()
+  const { user, loading: userLoading } = useUser()
   const router = useRouter()
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
+  const [isMenuHovered, setIsMenuHovered] = useState(false)
+  const { summaryData, isLoading: isSummaryLoading, refetch: refetchSummary } = useSummaryData()
 
   const handleResize = useCallback(() => {
-    setIsDesktop(window.innerWidth >= 768)
-  }, [])
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login')
+    const newIsDesktop = window.innerWidth >= 768
+    setIsDesktop(newIsDesktop)
+    if (newIsDesktop) {
+      setIsSideMenuOpen(false)
     }
-  }, [user, loading, router])
+  }, [])
 
   useEffect(() => {
     handleResize()
@@ -42,59 +43,71 @@ export default function Dashboard() {
     return () => window.removeEventListener('resize', handleResize)
   }, [handleResize])
 
-  const handleMouseEnter = () => {
-    if (isDesktop) {
-      setIsSideMenuOpen(true)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'REFETCH_SUMMARY') {
+        refetchSummary()
+      }
     }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [refetchSummary])
+
+  const toggleMenu = () => setIsSideMenuOpen(!isSideMenuOpen)
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
   }
 
-  const handleMouseLeave = () => {
-    if (isDesktop) {
-      setIsSideMenuOpen(false)
-    }
+  const handleMouseEnter = () => setIsMenuHovered(true)
+  const handleMouseLeave = () => setIsMenuHovered(false)
+
+  if (userLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
   }
 
-  const toggleMenu = () => {
-    if (!isDesktop) {
-      setIsSideMenuOpen(!isSideMenuOpen)
-    }
-  }
-
-  if (loading || !user) {
-    return <div>Loading...</div>
+  if (!user) {
+    router.push('/login')
+    return null
   }
 
   return (
     <div className="min-h-screen bg-background">
       {/* Side Menu */}
-      <div
+      <aside
         className={`fixed top-0 left-0 h-full w-64 bg-background border-r transform transition-transform duration-300 ease-in-out z-50 ${
-          isSideMenuOpen ? "translate-x-0" : "-translate-x-full"
+          isDesktop
+            ? isMenuHovered
+              ? 'translate-x-0'
+              : '-translate-x-60'
+            : isSideMenuOpen
+            ? 'translate-x-0'
+            : '-translate-x-full'
         }`}
+        onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="p-4">
-          <h2 className="text-2xl font-bold mb-4">Menu</h2>
-          <nav className="space-y-2">
-            <Link href="/" className="block p-2 hover:bg-accent rounded-md">Dashboard</Link>
-            <Link href="/sales" className="block p-2 hover:bg-accent rounded-md">Sales</Link>
-            <Link href="/costs" className="block p-2 hover:bg-accent rounded-md">Costs</Link>
-            <Link href="/sales-report" className="block p-2 hover:bg-accent rounded-md">Sales Report</Link>
-            <Link href="/costs-report" className="block p-2 hover:bg-accent rounded-md">Costs Report</Link>
-          </nav>
-        </div>
-      </div>
+        <nav className="p-4 space-y-2">
+          <Link href="/" className="block p-2 hover:bg-accent rounded-md">Dashboard</Link>
+          <Link href="/sales" className="block p-2 hover:bg-accent rounded-md">Sales</Link>
+          <Link href="/costs" className="block p-2 hover:bg-accent rounded-md">Costs</Link>
+          <Link href="/sales-report" className="block p-2 hover:bg-accent rounded-md">Sales Report</Link>
+          <Link href="/costs-report" className="block p-2 hover:bg-accent rounded-md">Costs Report</Link>
+        </nav>
+      </aside>
 
-      {/* Hover area for desktop */}
-      {isDesktop && (
+      {/* Backdrop for mobile */}
+      {!isDesktop && isSideMenuOpen && (
         <div
-          className="fixed top-0 left-0 w-16 h-full z-40"
-          onMouseEnter={handleMouseEnter}
-        />
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={toggleMenu}
+        ></div>
       )}
 
       {/* Main Content */}
-      <div className="p-4 sm:p-6 md:p-8 space-y-8">
+      <main className={`p-4 sm:p-6 md:p-8 space-y-8 ${isDesktop ? 'ml-4' : ''} transition-all duration-300`}>
         <header className="flex justify-between items-center">
           <div className="flex items-center space-x-4">
             <Button
@@ -129,7 +142,7 @@ export default function Dashboard() {
                 <UserIcon className="mr-2 h-4 w-4" />
                 <span>Profile</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => supabase.auth.signOut()}>
+              <DropdownMenuItem onClick={handleSignOut}>
                 <LogOutIcon className="mr-2 h-4 w-4" />
                 <span>Log out</span>
               </DropdownMenuItem>
@@ -137,50 +150,33 @@ export default function Dashboard() {
           </DropdownMenu>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-              <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">TZS 2,001,600</div>
-              <p className="text-xs text-muted-foreground">+20.1% from last month</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Costs</CardTitle>
-              <LineChartIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">TZS 239,200</div>
-              <p className="text-xs text-muted-foreground">+4% from last month</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">New Sale Entry</CardTitle>
-              <PlusCircleIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <Link href="/sales">
-                <Button className="w-full">Add New Sale</Button>
-              </Link>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">New Cost Entry</CardTitle>
-              <PlusCircleIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <Link href="/costs">
-                <Button className="w-full" variant="outline">Add New Cost</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard
+            title="Total Sales"
+            icon={<DollarSignIcon className="h-4 w-4 text-muted-foreground" />}
+            value={isSummaryLoading ? 'Loading...' : `TZS ${summaryData.totalSales.toLocaleString()}`}
+            subtitle={`${summaryData.salesCount} sales recorded`}
+          />
+          <SummaryCard
+            title="Total Costs"
+            icon={<LineChartIcon className="h-4 w-4 text-muted-foreground" />}
+            value={isSummaryLoading ? 'Loading...' : `TZS ${summaryData.totalCosts.toLocaleString()}`}
+            subtitle={`${summaryData.costsCount} costs recorded`}
+          />
+          <ActionCard
+            title="New Sale Entry"
+            icon={<PlusCircleIcon className="h-4 w-4 text-muted-foreground" />}
+            href="/sales"
+            buttonText="Add New Sale"
+          />
+          <ActionCard
+            title="New Cost Entry"
+            icon={<PlusCircleIcon className="h-4 w-4 text-muted-foreground" />}
+            href="/costs"
+            buttonText="Add New Cost"
+            variant="outline"
+          />
+        </section>
 
         <Tabs defaultValue="daily" className="space-y-4">
           <TabsList>
@@ -210,7 +206,53 @@ export default function Dashboard() {
             <Button variant="outline" className="w-full sm:w-auto">View Full Costs Report</Button>
           </Link>
         </div>
-      </div>
+      </main>
     </div>
+  )
+}
+
+interface SummaryCardProps {
+  title: string;
+  icon: React.ReactNode;
+  value: string;
+  subtitle: string;
+}
+
+function SummaryCard({ title, icon, value, subtitle }: SummaryCardProps) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+interface ActionCardProps {
+  title: string;
+  icon: React.ReactNode;
+  href: string;
+  buttonText: string;
+  variant?: 'default' | 'outline';
+}
+
+function ActionCard({ title, icon, href, buttonText, variant = 'default' }: ActionCardProps) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <Link href={{ pathname: href, query: { refetchSummary: 'true' } }}>
+          <Button className="w-full" variant={variant}>{buttonText}</Button>
+        </Link>
+      </CardContent>
+    </Card>
   )
 }

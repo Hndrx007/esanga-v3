@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/use-toast"
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '../../lib/useUser'
+import { useSearchParams } from 'next/navigation'
 
 interface SaleItem {
   id: number;
@@ -26,6 +28,9 @@ export default function SalesEntryPage() {
   const [recentSales, setRecentSales] = useState<SaleItem[]>([])
   const { toast } = useToast()
   const { user, loading } = useUser()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const shouldRefetchSummary = searchParams.get('refetchSummary') === 'true'
 
   useEffect(() => {
     if (user && !loading) {
@@ -33,6 +38,14 @@ export default function SalesEntryPage() {
       fetchRecentSales()
     }
   }, [user, loading])
+
+  useEffect(() => {
+    if (shouldRefetchSummary) {
+      // Implement a method to communicate with the parent Dashboard component
+      // This could be through a custom event, global state, or other means
+      window.postMessage({ type: 'REFETCH_SUMMARY' }, '*')
+    }
+  }, [shouldRefetchSummary])
 
   async function fetchDailySales() {
     if (!user) return
@@ -115,6 +128,9 @@ export default function SalesEntryPage() {
         title: "Sale Added",
         description: "The sale has been successfully recorded.",
       })
+      if (shouldRefetchSummary) {
+        window.postMessage({ type: 'REFETCH_SUMMARY' }, '*')
+      }
     }
   }
 
@@ -141,6 +157,9 @@ export default function SalesEntryPage() {
         title: "Sale Deleted",
         description: "The sale has been removed from the list.",
       })
+      if (shouldRefetchSummary) {
+        window.postMessage({ type: 'REFETCH_SUMMARY' }, '*')
+      }
     }
   }
 
